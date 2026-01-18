@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:zenn.dev)",
+      "WebSearch",
+      "WebFetch(domain:ai.google.dev)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)",
+      "Bash(for run_id in 21083935460 21082720119 21081271438 21079791047 21078074967 21049861927 21048445936 21046829847)",
+      "Bash(do echo \"=== Run ID: $run_id ===\" gh run view $run_id --repo SnsCool/-AI- --log)",
+      "Bash(done)",
+      "Bash(for run_id in 21045312639 21043613932 21013411350 21012042021 21010373968 21008658491 21006865580)",
+      "Skill(frontend-design)",
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --use-npm --yes)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run dev)",
+      "Bash(lsof:*)",
+      "Bash(node test-generation.mjs:*)",
+      "Bash(npx playwright install:*)",
+      "Bash(node browser-test.mjs:*)",
+      "Bash(curl:*)",
+      "Skill(kiro:spec-impl)",
+      "Skill(kiro:spec-tasks)",
+      "Bash(npx shadcn@latest add:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ]
+  }
+}
