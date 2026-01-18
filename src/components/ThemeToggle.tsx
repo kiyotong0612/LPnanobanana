@@ -1,28 +1,55 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore, useCallback } from 'react';
 import { Moon, Sun } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
+// Theme store using external store pattern
+const themeStore = {
+  isDark: true,
+  listeners: new Set<() => void>(),
+
+  subscribe(listener: () => void) {
+    themeStore.listeners.add(listener);
+    return () => themeStore.listeners.delete(listener);
+  },
+
+  getSnapshot() {
+    return themeStore.isDark;
+  },
+
+  getServerSnapshot() {
+    return true; // Default to dark on server
+  },
+
+  setTheme(isDark: boolean) {
+    themeStore.isDark = isDark;
+    themeStore.listeners.forEach((listener) => listener());
+  },
+};
+
+// Initialize theme on client
+if (typeof window !== 'undefined') {
+  const savedTheme = localStorage.getItem('theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const shouldBeDark = savedTheme ? savedTheme === 'dark' : prefersDark;
+  themeStore.isDark = shouldBeDark;
+  document.documentElement.classList.toggle('dark', shouldBeDark);
+}
+
 export function ThemeToggle() {
-  const [isDark, setIsDark] = useState(true);
+  const isDark = useSyncExternalStore(
+    themeStore.subscribe,
+    themeStore.getSnapshot,
+    themeStore.getServerSnapshot
+  );
 
-  useEffect(() => {
-    // Check for saved preference or system preference
-    const savedTheme = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-    const shouldBeDark = savedTheme ? savedTheme === 'dark' : prefersDark;
-    setIsDark(shouldBeDark);
-    document.documentElement.classList.toggle('dark', shouldBeDark);
-  }, []);
-
-  const toggleTheme = () => {
-    const newIsDark = !isDark;
-    setIsDark(newIsDark);
+  const toggleTheme = useCallback(() => {
+    const newIsDark = !themeStore.isDark;
+    themeStore.setTheme(newIsDark);
     document.documentElement.classList.toggle('dark', newIsDark);
     localStorage.setItem('theme', newIsDark ? 'dark' : 'light');
-  };
+  }, []);
 
   return (
     <Button

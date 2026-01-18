@@ -53,6 +53,10 @@ interface LPStore {
   setIsGenerating: (isGenerating: boolean) => void;
   setError: (error: string | null) => void;
   reset: () => void;
+  // バリデーション
+  isStepComplete: (stepIndex: number) => boolean;
+  canProceedToNext: () => boolean;
+  getStepValidationMessage: (stepIndex: number) => string | null;
 }
 
 // 初期ステップ設定
@@ -209,4 +213,52 @@ export const useLPStore = create<LPStore>((set, get) => ({
       isGenerating: false,
       error: null,
     }),
+
+  // バリデーション関数
+  isStepComplete: (stepIndex: number) => {
+    const state = get();
+    switch (stepIndex) {
+      case 0: // 素材画像
+        return state.materialImages.length > 0;
+      case 1: // 参考デザイン（任意）
+        return true; // Always complete, reference images are optional
+      case 2: // テキスト
+        return state.textContent.mainCopy.trim() !== '';
+      case 3: // 色指定（任意）
+        return true; // Always complete, colors are optional
+      case 4: // 生成設定
+        return true; // Always complete with defaults
+      case 5: // 生成
+        return state.generatedImages.length > 0;
+      default:
+        return false;
+    }
+  },
+
+  canProceedToNext: () => {
+    const state = get();
+    const currentStep = state.wizard.currentStep;
+    // Last step cannot proceed to next
+    if (currentStep >= state.wizard.steps.length - 1) {
+      return false;
+    }
+    return state.isStepComplete(currentStep);
+  },
+
+  getStepValidationMessage: (stepIndex: number) => {
+    const state = get();
+    if (state.isStepComplete(stepIndex)) {
+      return null;
+    }
+    switch (stepIndex) {
+      case 0:
+        return '少なくとも1枚の素材画像をアップロードしてください';
+      case 2:
+        return 'メインキャッチコピーを入力してください';
+      case 5:
+        return 'LP画像を生成してください';
+      default:
+        return null;
+    }
+  },
 }));

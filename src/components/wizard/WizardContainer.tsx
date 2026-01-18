@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { StepIndicator } from './StepIndicator';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { ApiKeySettings } from '@/components/ApiKeySettings';
 import { useLPStore } from '@/store/lpStore';
 import { cn } from '@/lib/utils';
 
@@ -14,11 +15,21 @@ interface WizardContainerProps {
 }
 
 export function WizardContainer({ children }: WizardContainerProps) {
-  const { wizard, nextStep, prevStep, setCurrentStep } = useLPStore();
+  const {
+    wizard,
+    nextStep,
+    prevStep,
+    setCurrentStep,
+    canProceedToNext,
+    getStepValidationMessage,
+    isStepComplete,
+  } = useLPStore();
   const { currentStep, steps, canGoBack } = wizard;
 
   const isLastStep = currentStep === steps.length - 1;
   const currentStepConfig = steps[currentStep];
+  const canProceed = canProceedToNext();
+  const validationMessage = getStepValidationMessage(currentStep);
 
   return (
     <div className="min-h-screen bg-background gradient-mesh">
@@ -34,7 +45,10 @@ export function WizardContainer({ children }: WizardContainerProps) {
               <p className="text-xs text-muted-foreground">Powered by Nano Banana</p>
             </div>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <ApiKeySettings />
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 
@@ -49,6 +63,7 @@ export function WizardContainer({ children }: WizardContainerProps) {
               setCurrentStep(step);
             }
           }}
+          isStepComplete={isStepComplete}
         />
 
         {/* Current Step Header */}
@@ -65,6 +80,15 @@ export function WizardContainer({ children }: WizardContainerProps) {
         <Card className="glass border-border/50 p-6 md:p-8 page-transition" key={`content-${currentStep}`}>
           {children}
         </Card>
+
+        {/* Validation Message */}
+        {validationMessage && !canProceed && (
+          <div className="mt-4 text-center">
+            <p className="text-sm text-amber-500 dark:text-amber-400">
+              {validationMessage}
+            </p>
+          </div>
+        )}
 
         {/* Navigation */}
         <div className="flex items-center justify-between mt-8">
@@ -89,7 +113,7 @@ export function WizardContainer({ children }: WizardContainerProps) {
 
           <Button
             onClick={nextStep}
-            disabled={isLastStep}
+            disabled={isLastStep || !canProceed}
             className={cn(
               'gap-2 bg-[var(--banana)] text-[var(--banana-foreground)] hover:bg-[var(--banana)]/90',
               'glow-banana-sm transition-all',

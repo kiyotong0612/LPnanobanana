@@ -8,6 +8,7 @@ interface StepIndicatorProps {
   steps: StepConfig[];
   currentStep: number;
   onStepClick?: (step: number) => void;
+  isStepComplete?: (stepIndex: number) => boolean;
 }
 
 const stepIcons = [
@@ -19,7 +20,7 @@ const stepIcons = [
   Sparkles,
 ];
 
-export function StepIndicator({ steps, currentStep, onStepClick }: StepIndicatorProps) {
+export function StepIndicator({ steps, currentStep, onStepClick, isStepComplete: checkStepComplete }: StepIndicatorProps) {
   return (
     <div className="w-full py-6">
       <div className="flex items-center justify-between relative">
@@ -33,7 +34,7 @@ export function StepIndicator({ steps, currentStep, onStepClick }: StepIndicator
 
         {steps.map((step, index) => {
           const Icon = stepIcons[index] || Sparkles;
-          const isCompleted = step.isComplete;
+          const isCompleted = checkStepComplete ? checkStepComplete(index) : step.isComplete;
           const isActive = index === currentStep;
           const isPast = index < currentStep;
 

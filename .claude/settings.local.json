@@ -24,7 +24,10 @@
       "Skill(kiro:spec-tasks)",
       "Bash(npx shadcn@latest add:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git checkout:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run lint:*)"
     ]
   }
 }
