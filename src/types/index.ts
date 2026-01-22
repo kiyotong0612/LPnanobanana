@@ -131,14 +131,32 @@ export interface DeployResponse {
 // クリッカブル領域の種類
 export type ClickableType = 'link' | 'button';
 
+// AI検出されたボタン
+export interface DetectedButton {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text: string;
+  type: 'primary' | 'secondary' | 'cta';
+  backgroundColor: string;
+  textColor: string;
+}
+
 // クリッカブル領域
 export interface ClickableRegion {
   id: string;
   region: EditRegion;  // 位置情報（相対座標）
   type: ClickableType;
   url: string;         // リンク先URL
-  label: string;       // アクセシビリティ用ラベル
+  label: string;       // アクセシビリティ用ラベル（ボタンテキスト）
   openInNewTab: boolean;
+  // ボタンスタイル（AI検出時に設定）
+  style?: {
+    backgroundColor: string;
+    textColor: string;
+    buttonType: 'primary' | 'secondary' | 'cta';
+  };
 }
 
 // ========== 設定 ==========

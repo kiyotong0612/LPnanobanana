@@ -1,4 +1,24 @@
 import { create } from 'zustand';
+
+// 色を明るく/暗くするヘルパー関数
+function adjustColor(hex: string, amount: number): string {
+  // #を削除
+  let color = hex.replace('#', '');
+
+  // 3桁の場合は6桁に展開
+  if (color.length === 3) {
+    color = color.split('').map(c => c + c).join('');
+  }
+
+  // RGB値を抽出して調整
+  const num = parseInt(color, 16);
+  let r = Math.min(255, Math.max(0, (num >> 16) + amount));
+  let g = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amount));
+  let b = Math.min(255, Math.max(0, (num & 0x0000FF) + amount));
+
+  return '#' + (0x1000000 + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
+
 import type {
   UploadedImage,
   GeneratedLPImage,
@@ -179,9 +199,65 @@ export const useLPStore = create<LPGeneratorState>((set, get) => ({
       const combinedImage = await combineImages(generatedImages);
 
       set({
-        isGenerating: false,
         generatedImages,
         combinedImage,
+        clickableRegions: [], // リセット
+      });
+
+      // ボタン検出を実行（バックグラウンド）
+      try {
+        const detectResponse = await fetch('/api/detect-buttons', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image: {
+              base64: combinedImage.base64,
+              mimeType: combinedImage.mimeType,
+            },
+          }),
+        });
+
+        const detectData = await detectResponse.json();
+
+        if (detectData.success && detectData.buttons?.length > 0) {
+          // 検出されたボタンをクリッカブル領域として追加
+          const detectedRegions = detectData.buttons.map((btn: {
+            x: number;
+            y: number;
+            width: number;
+            height: number;
+            text: string;
+            type: 'primary' | 'secondary' | 'cta';
+            backgroundColor: string;
+            textColor: string;
+          }, index: number) => ({
+            id: `detected-${Date.now()}-${index}`,
+            region: {
+              x: btn.x,
+              y: btn.y,
+              width: btn.width,
+              height: btn.height,
+            },
+            type: 'button' as const,
+            url: '',  // ユーザーが設定
+            label: btn.text,
+            openInNewTab: false,
+            style: {
+              backgroundColor: btn.backgroundColor,
+              textColor: btn.textColor,
+              buttonType: btn.type,
+            },
+          }));
+
+          set({ clickableRegions: detectedRegions });
+        }
+      } catch (detectError) {
+        console.error('Button detection failed:', detectError);
+        // ボタン検出の失敗は無視（メイン機能には影響しない）
+      }
+
+      set({
+        isGenerating: false,
         currentStep: 'edit',
       });
     } catch (error) {
@@ -612,20 +688,71 @@ export const useLPStore = create<LPGeneratorState>((set, get) => ({
 
     // クリッカブル領域のHTML生成
     const clickableAreasHTML = clickableRegions
+      .map((region, index) => {
+        const hasStyle = region.style;
+        const bgColor = hasStyle?.backgroundColor || '#FF6B00';
+        const textColor = hasStyle?.textColor || '#FFFFFF';
+        const buttonType = hasStyle?.buttonType || 'cta';
+        const isButton = region.type === 'button' && hasStyle;
+
+        if (isButton) {
+          // スタイル付きボタン（ホバー効果あり）
+          const target = region.openInNewTab ? ' target="_blank" rel="noopener noreferrer"' : '';
+          return `    <a href="${region.url || '#'}" class="lp-button lp-button-${buttonType}" data-index="${index}"${target}>
+      ${region.label}
+    </a>`;
+        } else {
+          // 透明リンク
+          const target = region.openInNewTab ? ' target="_blank" rel="noopener noreferrer"' : '';
+          return `    <a href="${region.url || '#'}" class="lp-link" aria-label="${region.label}" data-index="${index}"${target}></a>`;
+        }
+      })
+      .join('\n');
+
+    // ボタンのスタイル生成（各ボタンごとにカスタム）
+    const buttonStyles = clickableRegions
+      .filter((r) => r.type === 'button' && r.style)
+      .map((region, index) => {
+        const actualIndex = clickableRegions.findIndex((r) => r.id === region.id);
+        const bgColor = region.style?.backgroundColor || '#FF6B00';
+        const textColor = region.style?.textColor || '#FFFFFF';
+
+        // ホバー時の色を計算（少し明るく）
+        const hoverBg = adjustColor(bgColor, 20);
+
+        return `
+    .lp-button[data-index="${actualIndex}"] {
+      top: ${region.region.y * 100}%;
+      left: ${region.region.x * 100}%;
+      width: ${region.region.width * 100}%;
+      height: ${region.region.height * 100}%;
+      background-color: ${bgColor};
+      color: ${textColor};
+    }
+    .lp-button[data-index="${actualIndex}"]:hover {
+      background-color: ${hoverBg};
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    }
+    .lp-button[data-index="${actualIndex}"]:active {
+      transform: translateY(0);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    }`;
+      })
+      .join('\n');
+
+    // リンクのスタイル生成
+    const linkStyles = clickableRegions
+      .filter((r) => r.type !== 'button' || !r.style)
       .map((region) => {
-        const style = [
-          'position: absolute',
-          `top: ${region.region.y * 100}%`,
-          `left: ${region.region.x * 100}%`,
-          `width: ${region.region.width * 100}%`,
-          `height: ${region.region.height * 100}%`,
-          'cursor: pointer',
-          'display: block',
-        ].join('; ');
-
-        const target = region.openInNewTab ? ' target="_blank" rel="noopener noreferrer"' : '';
-
-        return `    <a href="${region.url}" aria-label="${region.label}" style="${style}"${target}></a>`;
+        const actualIndex = clickableRegions.findIndex((r) => r.id === region.id);
+        return `
+    .lp-link[data-index="${actualIndex}"] {
+      top: ${region.region.y * 100}%;
+      left: ${region.region.x * 100}%;
+      width: ${region.region.width * 100}%;
+      height: ${region.region.height * 100}%;
+    }`;
       })
       .join('\n');
 
@@ -655,12 +782,39 @@ export const useLPStore = create<LPGeneratorState>((set, get) => ({
       width: 100%;
       display: block;
     }
-    .lp-container a {
+
+    /* ボタン共通スタイル */
+    .lp-button {
+      position: absolute;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      font-weight: bold;
+      font-size: clamp(12px, 2.5vw, 16px);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+
+    /* 透明リンク */
+    .lp-link {
+      position: absolute;
+      display: block;
+      cursor: pointer;
       transition: background-color 0.2s;
     }
-    .lp-container a:hover {
+    .lp-link:hover {
       background-color: rgba(255, 255, 255, 0.1);
     }
+
+    /* 各ボタンの個別スタイル */
+    ${buttonStyles}
+
+    /* 各リンクの個別スタイル */
+    ${linkStyles}
   </style>
 </head>
 <body>

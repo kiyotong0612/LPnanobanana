@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Link2, Trash2, ExternalLink, Plus, X } from 'lucide-react';
+import { Link2, Trash2, ExternalLink, Plus, X, MousePointer2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -186,20 +186,55 @@ export function LinkConfigPanel({ imageSrc }: LinkConfigPanelProps) {
   };
 
   // 領域のスタイル
-  const getRegionStyle = (region: EditRegion, isSelected: boolean) => ({
-    left: `${region.x * 100}%`,
-    top: `${region.y * 100}%`,
-    width: `${region.width * 100}%`,
-    height: `${region.height * 100}%`,
-    border: isSelected ? '3px solid #3b82f6' : '2px solid #3b82f6',
-    backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.25)' : 'rgba(59, 130, 246, 0.15)',
-  });
+  const getRegionStyle = (clickableRegion: ClickableRegion, isSelected: boolean) => {
+    const { region, style } = clickableRegion;
+    const isButton = clickableRegion.type === 'button' && style;
+
+    if (isButton) {
+      // ボタンの場合は実際の色で表示
+      return {
+        left: `${region.x * 100}%`,
+        top: `${region.y * 100}%`,
+        width: `${region.width * 100}%`,
+        height: `${region.height * 100}%`,
+        backgroundColor: style.backgroundColor,
+        border: isSelected ? '3px solid #f59e0b' : '2px solid rgba(255, 255, 255, 0.5)',
+        borderRadius: '8px',
+        opacity: isSelected ? 1 : 0.9,
+        boxShadow: isSelected ? '0 0 0 3px rgba(245, 158, 11, 0.3)' : '0 4px 12px rgba(0, 0, 0, 0.15)',
+      };
+    }
+
+    // リンクの場合
+    return {
+      left: `${region.x * 100}%`,
+      top: `${region.y * 100}%`,
+      width: `${region.width * 100}%`,
+      height: `${region.height * 100}%`,
+      border: isSelected ? '3px solid #3b82f6' : '2px solid #3b82f6',
+      backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.25)' : 'rgba(59, 130, 246, 0.15)',
+    };
+  };
+
+  const detectedCount = clickableRegions.filter((r) => r.id.startsWith('detected-')).length;
+  const buttonCount = clickableRegions.filter((r) => r.type === 'button').length;
+  const urlMissingCount = clickableRegions.filter((r) => !r.url).length;
 
   return (
     <div className="space-y-4">
+      {/* 検出結果の表示 */}
+      {detectedCount > 0 && (
+        <div className="flex items-center gap-2 p-2 bg-amber-500/10 border border-amber-500/20 rounded-lg text-sm">
+          <Sparkles className="w-4 h-4 text-amber-500" />
+          <span>AIが{detectedCount}個のボタンを検出しました。URLを設定してください。</span>
+        </div>
+      )}
+
       {/* 説明 */}
       <div className="text-sm text-muted-foreground">
-        画像上でドラッグしてリンク領域を設定してください。設定した領域はクリック可能になります。
+        {buttonCount > 0
+          ? '検出されたボタンにURLを設定するか、新しいリンク領域を追加できます。'
+          : '画像上でドラッグしてリンク領域を設定してください。設定した領域はクリック可能になります。'}
       </div>
 
       {/* 画像とリンク領域 */}
@@ -216,38 +251,69 @@ export function LinkConfigPanel({ imageSrc }: LinkConfigPanelProps) {
         />
 
         {/* 既存のクリッカブル領域 */}
-        {clickableRegions.map((r, index) => (
-          <div
-            key={r.id}
-            className="absolute pointer-events-auto"
-            style={getRegionStyle(r.region, r.id === selectedRegionId)}
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedRegionId(r.id);
-              setPendingRegion(null);
-            }}
-          >
-            <span className="absolute top-1 left-1 bg-blue-500 text-white text-xs font-bold px-2 py-1 rounded shadow-md z-10 flex items-center gap-1">
-              <Link2 className="w-3 h-3" />
-              {index + 1}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute -top-2 -right-2 w-5 h-5 bg-destructive text-destructive-foreground rounded-full p-0 hover:bg-destructive/90 z-20"
+        {clickableRegions.map((r, index) => {
+          const isButton = r.type === 'button' && r.style;
+          const isDetected = r.id.startsWith('detected-');
+
+          return (
+            <div
+              key={r.id}
+              className="absolute pointer-events-auto"
+              style={getRegionStyle(r, r.id === selectedRegionId)}
               onClick={(e) => {
                 e.stopPropagation();
-                removeClickableRegion(r.id);
-                if (selectedRegionId === r.id) {
-                  setSelectedRegionId(null);
-                  setShowForm(false);
-                }
+                setSelectedRegionId(r.id);
+                setPendingRegion(null);
               }}
             >
-              <X className="w-3 h-3" />
-            </Button>
-          </div>
-        ))}
+              {/* ボタンの場合はテキストを表示 */}
+              {isButton && (
+                <div
+                  className="absolute inset-0 flex items-center justify-center font-bold text-xs pointer-events-none"
+                  style={{ color: r.style?.textColor || '#fff' }}
+                >
+                  {r.label}
+                </div>
+              )}
+
+              {/* バッジ */}
+              <span
+                className={cn(
+                  'absolute -top-2 -left-2 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-md z-10 flex items-center gap-1',
+                  isButton ? 'bg-amber-500' : 'bg-blue-500'
+                )}
+              >
+                {isDetected && <Sparkles className="w-2.5 h-2.5" />}
+                {isButton ? <MousePointer2 className="w-2.5 h-2.5" /> : <Link2 className="w-2.5 h-2.5" />}
+                {index + 1}
+              </span>
+
+              {/* URLが未設定の場合の警告 */}
+              {!r.url && (
+                <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-red-500 text-white text-[9px] px-1.5 py-0.5 rounded whitespace-nowrap">
+                  URL未設定
+                </span>
+              )}
+
+              {/* 削除ボタン */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute -top-2 -right-2 w-5 h-5 bg-destructive text-destructive-foreground rounded-full p-0 hover:bg-destructive/90 z-20"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeClickableRegion(r.id);
+                  if (selectedRegionId === r.id) {
+                    setSelectedRegionId(null);
+                    setShowForm(false);
+                  }
+                }}
+              >
+                <X className="w-3 h-3" />
+              </Button>
+            </div>
+          );
+        })}
 
         {/* 描画中/pending領域 */}
         {(currentRect || pendingRegion) && (
@@ -271,7 +337,14 @@ export function LinkConfigPanel({ imageSrc }: LinkConfigPanelProps) {
         {clickableRegions.length === 0 && !isDrawing && !pendingRegion && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="bg-black/70 text-white text-sm px-4 py-2 rounded-lg">
-              ドラッグしてリンク領域を追加
+              ドラッグしてリンク領域を追加（またはボタン検出中...）
+            </div>
+          </div>
+        )}
+        {urlMissingCount > 0 && clickableRegions.length > 0 && !isDrawing && !pendingRegion && !showForm && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-none">
+            <div className="bg-red-500/90 text-white text-xs px-3 py-1.5 rounded-lg">
+              {urlMissingCount}個のボタンにURLが未設定です
             </div>
           </div>
         )}
@@ -343,46 +416,77 @@ export function LinkConfigPanel({ imageSrc }: LinkConfigPanelProps) {
       {/* リンク一覧 */}
       {clickableRegions.length > 0 && (
         <div className="space-y-2">
-          <Label className="text-xs">設定済みリンク ({clickableRegions.length})</Label>
-          <div className="space-y-1">
-            {clickableRegions.map((r, index) => (
-              <div
-                key={r.id}
-                className={cn(
-                  'flex items-center gap-2 p-2 rounded border text-sm cursor-pointer transition-colors',
-                  selectedRegionId === r.id
-                    ? 'border-blue-500 bg-blue-500/10'
-                    : 'border-border hover:bg-muted/50'
-                )}
-                onClick={() => setSelectedRegionId(r.id)}
-              >
-                <span className="w-5 h-5 rounded bg-blue-500 text-white text-xs font-bold flex items-center justify-center">
-                  {index + 1}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <div className="truncate text-xs font-medium">{r.label}</div>
-                  <div className="truncate text-xs text-muted-foreground flex items-center gap-1">
-                    {r.url}
-                    {r.openInNewTab && <ExternalLink className="w-3 h-3" />}
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeClickableRegion(r.id);
-                    if (selectedRegionId === r.id) {
-                      setSelectedRegionId(null);
-                      setShowForm(false);
-                    }
-                  }}
+          <Label className="text-xs">
+            設定済み ({clickableRegions.length}) -
+            {buttonCount > 0 && ` ボタン: ${buttonCount}`}
+            {clickableRegions.length - buttonCount > 0 && ` リンク: ${clickableRegions.length - buttonCount}`}
+          </Label>
+          <div className="space-y-1 max-h-[200px] overflow-y-auto">
+            {clickableRegions.map((r, index) => {
+              const isButton = r.type === 'button' && r.style;
+              const isDetected = r.id.startsWith('detected-');
+
+              return (
+                <div
+                  key={r.id}
+                  className={cn(
+                    'flex items-center gap-2 p-2 rounded border text-sm cursor-pointer transition-colors',
+                    selectedRegionId === r.id
+                      ? 'border-amber-500 bg-amber-500/10'
+                      : 'border-border hover:bg-muted/50',
+                    !r.url && 'border-red-500/50'
+                  )}
+                  onClick={() => setSelectedRegionId(r.id)}
                 >
-                  <Trash2 className="w-3 h-3" />
-                </Button>
-              </div>
-            ))}
+                  <span
+                    className={cn(
+                      'w-5 h-5 rounded text-white text-xs font-bold flex items-center justify-center flex-shrink-0',
+                      isButton ? 'bg-amber-500' : 'bg-blue-500'
+                    )}
+                  >
+                    {index + 1}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1">
+                      <span className="truncate text-xs font-medium">{r.label}</span>
+                      {isDetected && (
+                        <Sparkles className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                      )}
+                      {isButton && (
+                        <span className="text-[10px] bg-amber-500/20 text-amber-700 dark:text-amber-300 px-1 rounded">
+                          ボタン
+                        </span>
+                      )}
+                    </div>
+                    <div className="truncate text-xs text-muted-foreground flex items-center gap-1">
+                      {r.url ? (
+                        <>
+                          {r.url}
+                          {r.openInNewTab && <ExternalLink className="w-3 h-3 flex-shrink-0" />}
+                        </>
+                      ) : (
+                        <span className="text-red-500">URL未設定 - クリックして設定</span>
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground hover:text-destructive flex-shrink-0"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeClickableRegion(r.id);
+                      if (selectedRegionId === r.id) {
+                        setSelectedRegionId(null);
+                        setShowForm(false);
+                      }
+                    }}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </Button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
