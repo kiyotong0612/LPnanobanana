@@ -731,12 +731,14 @@ export const useLPStore = create<LPGeneratorState>((set, get) => ({
     }
     .lp-button[data-index="${actualIndex}"]:hover {
       background-color: ${hoverBg};
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+      transform: translateY(-3px) scale(1.02);
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+      filter: brightness(1.1);
     }
     .lp-button[data-index="${actualIndex}"]:active {
-      transform: translateY(0);
+      transform: translateY(1px) scale(0.98);
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      filter: brightness(0.95);
     }`;
       })
       .join('\n');
@@ -783,20 +785,25 @@ export const useLPStore = create<LPGeneratorState>((set, get) => ({
       display: block;
     }
 
-    /* ボタン共通スタイル */
+    /* ボタン共通スタイル - 画像のボタンを完全に隠す */
     .lp-button {
       position: absolute;
+      z-index: 10;
       display: flex;
       align-items: center;
       justify-content: center;
       text-decoration: none;
       font-weight: bold;
-      font-size: clamp(12px, 2.5vw, 16px);
+      font-size: clamp(14px, 3vw, 18px);
       border-radius: 8px;
       cursor: pointer;
       transition: all 0.2s ease;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+      /* 画像のボタンを完全に覆い隠す */
+      opacity: 1;
+      border: none;
+      outline: none;
     }
 
     /* 透明リンク */
