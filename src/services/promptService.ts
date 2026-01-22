@@ -410,6 +410,17 @@ ${sectionInstruction}
    - Modern, professional Japanese LP aesthetic
    - High contrast for readability
    - Premium feel appropriate for the product/service
+
+6. CTA BUTTONS (VERY IMPORTANT):
+   - CTA buttons must be CLEARLY RECTANGULAR with sharp, defined edges
+   - Use a SOLID, BRIGHT contrasting color (e.g., orange, green, or brand accent color)
+   - Button must have CLEAR BOUNDARIES - no gradients that fade into background
+   - Button text must be centered, bold, and easily readable
+   - Button should be horizontally centered in the section
+   - Typical button text: "今すぐ購入", "無料で始める", "詳しく見る", etc.
+   - Button height: approximately 5-8% of section height
+   - Button width: approximately 60-80% of section width
+   - Add subtle shadow or border to make button stand out
 `;
 
   if (hasMaterialImages) {
