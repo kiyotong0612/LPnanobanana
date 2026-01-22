@@ -1,9 +1,9 @@
 /**
- * Image Service
- * Handles image processing for LP generation
+ * Image Service v2 - 簡略化版
+ * 画像処理のみ（使用方法設定なし）
  */
 
-import type { UploadedImage, ImageUsageType } from '@/types';
+import type { UploadedImage } from '@/types';
 
 // Supported MIME types
 const SUPPORTED_MIME_TYPES = [
@@ -73,7 +73,7 @@ export function validateImage(file: File): {
 /**
  * Convert File to Base64 string
  */
-export function fileToBase64(file: File): Promise<string> {
+export function fileToBase64(file: File | Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -118,12 +118,12 @@ export function getImageDimensions(
 export async function resizeImage(
   file: File,
   maxDimension: number = MAX_DIMENSION
-): Promise<{ blob: Blob; resized: boolean }> {
+): Promise<{ blob: Blob; resized: boolean; mimeType: string }> {
   const { width, height } = await getImageDimensions(file);
 
   // Check if resize is needed
   if (width <= maxDimension && height <= maxDimension) {
-    return { blob: file, resized: false };
+    return { blob: file, resized: false, mimeType: file.type };
   }
 
   // Calculate new dimensions maintaining aspect ratio
@@ -163,7 +163,7 @@ export async function resizeImage(
       canvas.toBlob(
         (blob) => {
           if (blob) {
-            resolve({ blob, resized: true });
+            resolve({ blob, resized: true, mimeType: file.type });
           } else {
             reject(new Error('画像の変換に失敗しました'));
           }
@@ -185,11 +185,7 @@ export async function resizeImage(
 /**
  * Process uploaded file and create UploadedImage object
  */
-export async function processUploadedFile(
-  file: File,
-  type: 'material' | 'reference',
-  defaultUsage: ImageUsageType = 'auto'
-): Promise<UploadedImage> {
+export async function processUploadedFile(file: File): Promise<UploadedImage> {
   // Validate
   const validation = validateImage(file);
   if (!validation.valid) {
@@ -197,20 +193,18 @@ export async function processUploadedFile(
   }
 
   // Resize if needed
-  const { blob, resized } = await resizeImage(file);
+  const { blob, mimeType } = await resizeImage(file);
 
   // Convert to base64
-  const base64 = await fileToBase64(resized ? (blob as File) : file);
+  const base64 = await fileToBase64(blob);
 
   // Create preview URL
   const previewUrl = URL.createObjectURL(blob);
 
   return {
     id: crypto.randomUUID(),
-    file: resized ? new File([blob], file.name, { type: file.type }) : file,
     base64,
-    type,
-    usage: type === 'material' ? defaultUsage : undefined,
+    mimeType,
     previewUrl,
   };
 }
@@ -220,67 +214,4 @@ export async function processUploadedFile(
  */
 export function revokePreviewUrl(url: string): void {
   URL.revokeObjectURL(url);
-}
-
-/**
- * Get human-readable usage label
- */
-export function getUsageLabel(usage: ImageUsageType): string {
-  const labels: Record<ImageUsageType, string> = {
-    'main-visual': 'メインビジュアル',
-    background: '背景',
-    icon: 'アイコン',
-    product: '商品画像',
-    person: '人物',
-    auto: '自動配置',
-    custom: 'カスタム',
-  };
-  return labels[usage] || usage;
-}
-
-/**
- * Get all usage options
- */
-export function getUsageOptions(): Array<{
-  value: ImageUsageType;
-  label: string;
-  description: string;
-}> {
-  return [
-    {
-      value: 'auto',
-      label: '自動配置',
-      description: 'AIが最適な配置を判断',
-    },
-    {
-      value: 'main-visual',
-      label: 'メインビジュアル',
-      description: 'LPのメイン画像として使用',
-    },
-    {
-      value: 'background',
-      label: '背景',
-      description: '背景画像として使用',
-    },
-    {
-      value: 'product',
-      label: '商品画像',
-      description: '商品写真として配置',
-    },
-    {
-      value: 'person',
-      label: '人物',
-      description: '人物写真として配置',
-    },
-    {
-      value: 'icon',
-      label: 'アイコン',
-      description: 'アイコンや小さな装飾として使用',
-    },
-    {
-      value: 'custom',
-      label: 'カスタム',
-      description: '使用方法を自由に指定',
-    },
-  ];
 }

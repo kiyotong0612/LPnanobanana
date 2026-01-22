@@ -1,264 +1,562 @@
 import { create } from 'zustand';
 import type {
   UploadedImage,
-  TextContent,
-  ColorScheme,
-  GenerationConfig,
-  GeneratedImage,
-  StepConfig,
+  GeneratedLPImage,
+  LPGeneratorState,
+  NumberOfSections,
+  EditHistoryItem,
+  EditItem,
+  EditRegion,
+  WorkflowStep,
+  SectionConfig,
 } from '@/types';
+import { MAX_MATERIAL_IMAGES, MAX_REFERENCE_IMAGES, MAX_SECTION_MATERIAL_IMAGES } from '@/types';
+import { combineImages } from '@/services/imageCombiner';
+import { useSettingsStore } from './settingsStore';
 
-// ウィザードステート
-interface WizardState {
-  currentStep: number;
-  steps: StepConfig[];
-  canProceed: boolean;
-  canGoBack: boolean;
-}
-
-// LP生成ストア
-interface LPStore {
-  // ウィザード状態
-  wizard: WizardState;
-
-  // 素材データ
-  materialImages: UploadedImage[];
-  referenceImages: UploadedImage[];
-  textContent: TextContent;
-  colorScheme: ColorScheme;
-  generationConfig: GenerationConfig;
-
-  // 生成結果
-  generatedImages: GeneratedImage[];
-  isGenerating: boolean;
-  error: string | null;
-
-  // APIキー
-  apiKey: string | null;
-
-  // アクション
-  setCurrentStep: (step: number) => void;
-  nextStep: () => void;
-  prevStep: () => void;
-  addMaterialImage: (image: UploadedImage) => void;
-  removeMaterialImage: (id: string) => void;
-  addReferenceImage: (image: UploadedImage) => void;
-  removeReferenceImage: (id: string) => void;
-  setTextContent: (content: Partial<TextContent>) => void;
-  setColorScheme: (scheme: Partial<ColorScheme>) => void;
-  setGenerationConfig: (config: Partial<GenerationConfig>) => void;
-  setApiKey: (key: string | null) => void;
-  addGeneratedImage: (image: GeneratedImage) => void;
-  clearGeneratedImages: () => void;
-  setIsGenerating: (isGenerating: boolean) => void;
-  setError: (error: string | null) => void;
-  reset: () => void;
-  // バリデーション
-  isStepComplete: (stepIndex: number) => boolean;
-  canProceedToNext: () => boolean;
-  getStepValidationMessage: (stepIndex: number) => string | null;
-}
-
-// 初期ステップ設定
-const initialSteps: StepConfig[] = [
-  { id: 'material', title: '素材画像', description: '使用する素材画像をアップロード', isComplete: false },
-  { id: 'reference', title: '参考デザイン', description: '参考にするLP画像をアップロード', isComplete: false },
-  { id: 'text', title: 'テキスト', description: 'キャッチコピーや説明文を入力', isComplete: false },
-  { id: 'color', title: '色指定', description: 'カラースキームを設定', isComplete: false },
-  { id: 'settings', title: '生成設定', description: '解像度と枚数を設定', isComplete: false },
-  { id: 'generate', title: '生成', description: 'LP画像を生成', isComplete: false },
-];
-
-// 初期テキストコンテンツ
-const initialTextContent: TextContent = {
-  mainCopy: '',
-  subCopy: '',
-  description: '',
-  ctaText: '',
-  additionalTexts: [],
+// セクション設定の初期化ヘルパー
+const createInitialSectionConfigs = (count: number): SectionConfig[] => {
+  return Array.from({ length: count }, (_, i) => ({
+    id: i + 1,
+    instruction: '',
+    materialImages: [],
+  }));
 };
 
-// 初期カラースキーム
-const initialColorScheme: ColorScheme = {
-  mainColor: undefined,
-  accentColor: undefined,
-  backgroundColor: undefined,
-  extractFromReference: false,
-};
-
-// 初期生成設定
-const initialGenerationConfig: GenerationConfig = {
-  aspectRatio: '9:16',
-  imageSize: '2K',
-  numberOfImages: 1,
-};
-
-export const useLPStore = create<LPStore>((set, get) => ({
+export const useLPStore = create<LPGeneratorState>((set, get) => ({
   // 初期状態
-  wizard: {
-    currentStep: 0,
-    steps: initialSteps,
-    canProceed: false,
-    canGoBack: false,
-  },
+  description: '',
   materialImages: [],
   referenceImages: [],
-  textContent: initialTextContent,
-  colorScheme: initialColorScheme,
-  generationConfig: initialGenerationConfig,
-  generatedImages: [],
+  numberOfSections: 1,
+  sectionConfigs: createInitialSectionConfigs(1),
   isGenerating: false,
+  generatedImages: [],
+  combinedImage: null,
   error: null,
-  apiKey: null,
+
+  // MVP新機能: 編集状態
+  isEditing: false,
+  editHistory: [],
+  editItems: [],
+  currentEditIndex: -1,
+
+  // MVP新機能: HTML変換状態
+  isConverting: false,
+  generatedHTML: null,
+  generatedCSS: null,
+
+  // MVP新機能: デプロイ状態
+  isDeploying: false,
+  deployedUrl: null,
+
+  // ワークフロー
+  currentStep: 'generate',
 
   // アクション
-  setCurrentStep: step =>
-    set(state => ({
-      wizard: {
-        ...state.wizard,
-        currentStep: step,
-        canGoBack: step > 0,
-        canProceed: state.wizard.steps[step]?.isComplete ?? false,
-      },
-    })),
+  setDescription: (text: string) => set({ description: text }),
 
-  nextStep: () => {
-    const { wizard } = get();
-    if (wizard.currentStep < wizard.steps.length - 1) {
-      set(state => ({
-        wizard: {
-          ...state.wizard,
-          currentStep: state.wizard.currentStep + 1,
-          canGoBack: true,
-        },
-      }));
+  addMaterialImage: (image: UploadedImage) => {
+    const { materialImages } = get();
+    if (materialImages.length < MAX_MATERIAL_IMAGES) {
+      set({ materialImages: [...materialImages, image] });
     }
   },
 
-  prevStep: () => {
-    const { wizard } = get();
-    if (wizard.currentStep > 0) {
-      set(state => ({
-        wizard: {
-          ...state.wizard,
-          currentStep: state.wizard.currentStep - 1,
-          canGoBack: state.wizard.currentStep - 1 > 0,
-        },
-      }));
+  removeMaterialImage: (id: string) =>
+    set((state) => ({
+      materialImages: state.materialImages.filter((img) => img.id !== id),
+    })),
+
+  addReferenceImage: (image: UploadedImage) => {
+    const { referenceImages } = get();
+    if (referenceImages.length < MAX_REFERENCE_IMAGES) {
+      set({ referenceImages: [...referenceImages, image] });
     }
   },
 
-  addMaterialImage: image =>
-    set(state => ({
-      materialImages: [...state.materialImages, image],
+  removeReferenceImage: (id: string) =>
+    set((state) => ({
+      referenceImages: state.referenceImages.filter((img) => img.id !== id),
     })),
 
-  removeMaterialImage: id =>
-    set(state => ({
-      materialImages: state.materialImages.filter(img => img.id !== id),
-    })),
+  setNumberOfSections: (num: NumberOfSections) => {
+    const { sectionConfigs } = get();
+    let newConfigs: SectionConfig[];
 
-  addReferenceImage: image =>
-    set(state => ({
-      referenceImages: [...state.referenceImages, image],
-    })),
+    if (num > sectionConfigs.length) {
+      // セクションが増えた場合、新しいセクションを追加
+      const additionalConfigs = Array.from(
+        { length: num - sectionConfigs.length },
+        (_, i) => ({
+          id: sectionConfigs.length + i + 1,
+          instruction: '',
+          materialImages: [],
+        })
+      );
+      newConfigs = [...sectionConfigs, ...additionalConfigs];
+    } else {
+      // セクションが減った場合、余分なセクションを削除
+      newConfigs = sectionConfigs.slice(0, num);
+    }
 
-  removeReferenceImage: id =>
-    set(state => ({
-      referenceImages: state.referenceImages.filter(img => img.id !== id),
-    })),
+    set({ numberOfSections: num, sectionConfigs: newConfigs });
+  },
 
-  setTextContent: content =>
-    set(state => ({
-      textContent: { ...state.textContent, ...content },
-    })),
+  generateLP: async () => {
+    const { description, materialImages, referenceImages, numberOfSections, sectionConfigs } = get();
 
-  setColorScheme: scheme =>
-    set(state => ({
-      colorScheme: { ...state.colorScheme, ...scheme },
-    })),
+    // バリデーション
+    if (!description.trim()) {
+      set({ error: '商品/サービスの説明を入力してください' });
+      return;
+    }
 
-  setGenerationConfig: config =>
-    set(state => ({
-      generationConfig: { ...state.generationConfig, ...config },
-    })),
+    set({ isGenerating: true, error: null, generatedImages: [], combinedImage: null });
 
-  setApiKey: key => set({ apiKey: key }),
+    const generatedImages: GeneratedLPImage[] = [];
 
-  addGeneratedImage: image =>
-    set(state => ({
-      generatedImages: [...state.generatedImages, image],
-    })),
+    try {
+      // 枚数分だけ生成
+      for (let i = 0; i < numberOfSections; i++) {
+        const sectionConfig = sectionConfigs[i];
+        // セクション固有の素材がある場合はそれを使用、なければ共通素材を使用
+        const sectionMaterials = sectionConfig?.materialImages.length > 0
+          ? sectionConfig.materialImages
+          : materialImages;
 
-  clearGeneratedImages: () => set({ generatedImages: [] }),
+        const response = await fetch('/api/generate-lp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            description,
+            sectionInstruction: sectionConfig?.instruction || '',
+            materialImages: sectionMaterials.map((img) => ({
+              base64: img.base64,
+              mimeType: img.mimeType,
+            })),
+            referenceImages: referenceImages.map((img) => ({
+              base64: img.base64,
+              mimeType: img.mimeType,
+            })),
+            sectionIndex: i,
+            totalSections: numberOfSections,
+          }),
+        });
 
-  setIsGenerating: isGenerating => set({ isGenerating }),
+        const data = await response.json();
 
-  setError: error => set({ error }),
+        if (!response.ok || !data.success) {
+          set({
+            isGenerating: false,
+            error: data.error || `画像${i + 1}の生成に失敗しました`,
+            generatedImages,
+            combinedImage: null,
+          });
+          return;
+        }
+
+        generatedImages.push({
+          base64: data.image.base64,
+          mimeType: data.image.mimeType,
+        });
+
+        // 途中経過を更新
+        set({ generatedImages: [...generatedImages] });
+
+        // レート制限対策で少し待機
+        if (i < numberOfSections - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      }
+
+      // 全セクション生成完了後、画像を結合
+      const combinedImage = await combineImages(generatedImages);
+
+      set({
+        isGenerating: false,
+        generatedImages,
+        combinedImage,
+        currentStep: 'edit',
+      });
+    } catch (error) {
+      set({
+        isGenerating: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : 'ネットワークエラーが発生しました',
+        generatedImages,
+        combinedImage: null,
+      });
+    }
+  },
 
   reset: () =>
     set({
-      wizard: {
-        currentStep: 0,
-        steps: initialSteps,
-        canProceed: false,
-        canGoBack: false,
-      },
+      description: '',
       materialImages: [],
       referenceImages: [],
-      textContent: initialTextContent,
-      colorScheme: initialColorScheme,
-      generationConfig: initialGenerationConfig,
-      generatedImages: [],
+      numberOfSections: 1,
+      sectionConfigs: createInitialSectionConfigs(1),
       isGenerating: false,
+      generatedImages: [],
+      combinedImage: null,
       error: null,
+      isEditing: false,
+      editHistory: [],
+      editItems: [],
+      currentEditIndex: -1,
+      isConverting: false,
+      generatedHTML: null,
+      generatedCSS: null,
+      isDeploying: false,
+      deployedUrl: null,
+      currentStep: 'generate',
     }),
 
-  // バリデーション関数
-  isStepComplete: (stepIndex: number) => {
-    const state = get();
-    switch (stepIndex) {
-      case 0: // 素材画像
-        return state.materialImages.length > 0;
-      case 1: // 参考デザイン（任意）
-        return true; // Always complete, reference images are optional
-      case 2: // テキスト
-        return state.textContent.mainCopy.trim() !== '';
-      case 3: // 色指定（任意）
-        return true; // Always complete, colors are optional
-      case 4: // 生成設定
-        return true; // Always complete with defaults
-      case 5: // 生成
-        return state.generatedImages.length > 0;
-      default:
-        return false;
+  // セクションごとの設定アクション
+  setSectionInstruction: (sectionId: number, instruction: string) => {
+    set((state) => ({
+      sectionConfigs: state.sectionConfigs.map((config) =>
+        config.id === sectionId ? { ...config, instruction } : config
+      ),
+    }));
+  },
+
+  addSectionMaterialImage: (sectionId: number, image: UploadedImage) => {
+    set((state) => ({
+      sectionConfigs: state.sectionConfigs.map((config) =>
+        config.id === sectionId && config.materialImages.length < MAX_SECTION_MATERIAL_IMAGES
+          ? { ...config, materialImages: [...config.materialImages, image] }
+          : config
+      ),
+    }));
+  },
+
+  removeSectionMaterialImage: (sectionId: number, imageId: string) => {
+    set((state) => ({
+      sectionConfigs: state.sectionConfigs.map((config) =>
+        config.id === sectionId
+          ? { ...config, materialImages: config.materialImages.filter((img) => img.id !== imageId) }
+          : config
+      ),
+    }));
+  },
+
+  initializeSectionConfigs: (count: number) => {
+    set({ sectionConfigs: createInitialSectionConfigs(count) });
+  },
+
+  // MVP新機能アクション
+  setCurrentStep: (step: WorkflowStep) => set({ currentStep: step }),
+
+  editLP: async (instruction: string, region?: EditRegion | null) => {
+    const { combinedImage } = get();
+    const { geminiApiKey } = useSettingsStore.getState();
+
+    if (!combinedImage) {
+      set({ error: '編集する画像がありません' });
+      return;
+    }
+
+    set({ isEditing: true, error: null });
+
+    try {
+      const response = await fetch('/api/edit-lp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentImage: {
+            base64: combinedImage.base64,
+            mimeType: combinedImage.mimeType,
+          },
+          instruction,
+          region: region || undefined,
+          apiKey: geminiApiKey || undefined,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        set({
+          isEditing: false,
+          error: data.error || '編集に失敗しました',
+        });
+        return;
+      }
+
+      // 編集履歴に追加
+      const historyItem: EditHistoryItem = {
+        id: Date.now().toString(),
+        instruction,
+        region: region || null,
+        beforeImage: {
+          base64: combinedImage.base64,
+          mimeType: combinedImage.mimeType,
+        },
+        afterImage: data.image,
+        timestamp: Date.now(),
+      };
+
+      // 画像サイズを取得するためにImageを使用
+      const img = new Image();
+      img.src = `data:${data.image.mimeType};base64,${data.image.base64}`;
+      await new Promise((resolve) => {
+        img.onload = resolve;
+      });
+
+      set((state) => ({
+        isEditing: false,
+        combinedImage: {
+          base64: data.image.base64,
+          mimeType: data.image.mimeType,
+          width: img.width,
+          height: img.height,
+        },
+        editHistory: [...state.editHistory, historyItem],
+      }));
+    } catch (error) {
+      set({
+        isEditing: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : 'ネットワークエラーが発生しました',
+      });
     }
   },
 
-  canProceedToNext: () => {
-    const state = get();
-    const currentStep = state.wizard.currentStep;
-    // Last step cannot proceed to next
-    if (currentStep >= state.wizard.steps.length - 1) {
-      return false;
-    }
-    return state.isStepComplete(currentStep);
+  undoEdit: () => {
+    const { editHistory } = get();
+    if (editHistory.length === 0) return;
+
+    const lastEdit = editHistory[editHistory.length - 1];
+
+    // 画像サイズを取得するためにImageを使用
+    const img = new Image();
+    img.src = `data:${lastEdit.beforeImage.mimeType};base64,${lastEdit.beforeImage.base64}`;
+    img.onload = () => {
+      set((state) => ({
+        combinedImage: {
+          base64: lastEdit.beforeImage.base64,
+          mimeType: lastEdit.beforeImage.mimeType,
+          width: img.width,
+          height: img.height,
+        },
+        editHistory: state.editHistory.slice(0, -1),
+      }));
+    };
   },
 
-  getStepValidationMessage: (stepIndex: number) => {
-    const state = get();
-    if (state.isStepComplete(stepIndex)) {
-      return null;
+  convertToHTML: async (framework: 'html' | 'react' | 'nextjs', cssFramework: 'tailwind' | 'css') => {
+    const { combinedImage } = get();
+    const { geminiApiKey } = useSettingsStore.getState();
+
+    if (!combinedImage) {
+      set({ error: '変換する画像がありません' });
+      return;
     }
-    switch (stepIndex) {
-      case 0:
-        return '少なくとも1枚の素材画像をアップロードしてください';
-      case 2:
-        return 'メインキャッチコピーを入力してください';
-      case 5:
-        return 'LP画像を生成してください';
-      default:
-        return null;
+
+    set({ isConverting: true, error: null, generatedHTML: null, generatedCSS: null });
+
+    try {
+      const response = await fetch('/api/convert-html', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: {
+            base64: combinedImage.base64,
+            mimeType: combinedImage.mimeType,
+          },
+          framework,
+          cssFramework,
+          apiKey: geminiApiKey || undefined,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        set({
+          isConverting: false,
+          error: data.error || 'HTML変換に失敗しました',
+        });
+        return;
+      }
+
+      set({
+        isConverting: false,
+        generatedHTML: data.html,
+        generatedCSS: data.css || '',
+        currentStep: 'deploy',
+      });
+    } catch (error) {
+      set({
+        isConverting: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : 'ネットワークエラーが発生しました',
+      });
     }
+  },
+
+  deploy: async (projectName: string) => {
+    const { generatedHTML, generatedCSS } = get();
+    const { vercelToken, vercelTeamId } = useSettingsStore.getState();
+
+    if (!generatedHTML) {
+      set({ error: 'デプロイするHTMLがありません' });
+      return;
+    }
+
+    if (!vercelToken) {
+      set({ error: 'Vercel Access Tokenが設定されていません。設定画面から設定してください。' });
+      return;
+    }
+
+    set({ isDeploying: true, error: null, deployedUrl: null });
+
+    try {
+      const response = await fetch('/api/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          html: generatedHTML,
+          css: generatedCSS,
+          projectName,
+          vercelToken,
+          vercelTeamId: vercelTeamId || undefined,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        set({
+          isDeploying: false,
+          error: data.error || 'デプロイに失敗しました',
+        });
+        return;
+      }
+
+      set({
+        isDeploying: false,
+        deployedUrl: data.url,
+      });
+    } catch (error) {
+      set({
+        isDeploying: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : 'ネットワークエラーが発生しました',
+      });
+    }
+  },
+
+  // 複数編集項目管理
+  addEditItem: (instruction: string, region: EditRegion | null) => {
+    const newItem: EditItem = {
+      id: Date.now().toString(),
+      region,
+      instruction,
+      status: 'pending',
+    };
+    set((state) => ({
+      editItems: [...state.editItems, newItem],
+    }));
+  },
+
+  removeEditItem: (id: string) => {
+    set((state) => ({
+      editItems: state.editItems.filter((item) => item.id !== id),
+    }));
+  },
+
+  updateEditItem: (id: string, updates: Partial<EditItem>) => {
+    set((state) => ({
+      editItems: state.editItems.map((item) =>
+        item.id === id ? { ...item, ...updates } : item
+      ),
+    }));
+  },
+
+  clearEditItems: () => {
+    set({ editItems: [], currentEditIndex: -1 });
+  },
+
+  applyAllEdits: async () => {
+    const { editItems, combinedImage, editLP } = get();
+
+    if (!combinedImage) {
+      set({ error: '編集する画像がありません' });
+      return;
+    }
+
+    const pendingItems = editItems.filter((item) => item.status === 'pending');
+    if (pendingItems.length === 0) {
+      set({ error: '適用する編集項目がありません' });
+      return;
+    }
+
+    // 順次編集を適用
+    for (let i = 0; i < pendingItems.length; i++) {
+      const item = pendingItems[i];
+      set({ currentEditIndex: i });
+
+      // ステータスを処理中に更新
+      set((state) => ({
+        editItems: state.editItems.map((it) =>
+          it.id === item.id ? { ...it, status: 'processing' as const } : it
+        ),
+      }));
+
+      try {
+        // editLPを呼び出し（これはcombinedImageを更新する）
+        await editLP(item.instruction, item.region);
+
+        // エラーがなければ完了
+        const { error } = get();
+        if (error) {
+          set((state) => ({
+            editItems: state.editItems.map((it) =>
+              it.id === item.id ? { ...it, status: 'error' as const, error: error } : it
+            ),
+          }));
+          // エラーがあっても続行しない
+          break;
+        }
+
+        // ステータスを完了に更新
+        set((state) => ({
+          editItems: state.editItems.map((it) =>
+            it.id === item.id ? { ...it, status: 'completed' as const } : it
+          ),
+        }));
+
+        // レート制限対策で少し待機（最後の項目以外）
+        if (i < pendingItems.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+      } catch (error) {
+        set((state) => ({
+          editItems: state.editItems.map((it) =>
+            it.id === item.id
+              ? {
+                  ...it,
+                  status: 'error' as const,
+                  error: error instanceof Error ? error.message : '編集に失敗しました',
+                }
+              : it
+          ),
+        }));
+        break;
+      }
+    }
+
+    set({ currentEditIndex: -1 });
   },
 }));
