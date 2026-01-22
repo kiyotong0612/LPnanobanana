@@ -20,16 +20,13 @@ import { SettingsDialog } from '@/components/SettingsDialog';
 import { WorkflowPanel } from '@/components/WorkflowPanel';
 import { SectionConfigForm } from '@/components/SectionConfigForm';
 import { useLPStore } from '@/store/lpStore';
-import { MAX_MATERIAL_IMAGES, MAX_REFERENCE_IMAGES, NumberOfSections } from '@/types';
+import { MAX_REFERENCE_IMAGES, NumberOfSections } from '@/types';
 import { cn } from '@/lib/utils';
 
 export default function Home() {
   const {
     description,
     setDescription,
-    materialImages,
-    addMaterialImage,
-    removeMaterialImage,
     referenceImages,
     addReferenceImage,
     removeReferenceImage,
@@ -163,19 +160,6 @@ export default function Home() {
                     ))}
                   </div>
                 </div>
-
-                {/* Material Images - 共通素材（2枚以上の場合のみ表示） */}
-                {numberOfSections >= 2 && (
-                  <ImageDropzone
-                    type="material"
-                    images={materialImages}
-                    maxImages={MAX_MATERIAL_IMAGES}
-                    onAdd={addMaterialImage}
-                    onRemove={removeMaterialImage}
-                    label="共通素材画像（任意）"
-                    hint="セクション指定がない場合に使用（最大6枚）"
-                  />
-                )}
 
                 {/* Reference Images */}
                 <ImageDropzone
