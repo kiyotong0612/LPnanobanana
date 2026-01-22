@@ -126,6 +126,21 @@ export interface DeployResponse {
   error?: string;
 }
 
+// ========== クリッカブル領域（リンク設定） ==========
+
+// クリッカブル領域の種類
+export type ClickableType = 'link' | 'button';
+
+// クリッカブル領域
+export interface ClickableRegion {
+  id: string;
+  region: EditRegion;  // 位置情報（相対座標）
+  type: ClickableType;
+  url: string;         // リンク先URL
+  label: string;       // アクセシビリティ用ラベル
+  openInNewTab: boolean;
+}
+
 // ========== 設定 ==========
 
 export interface AppSettings {
@@ -136,7 +151,7 @@ export interface AppSettings {
 
 // ========== ワークフロー状態 ==========
 
-export type WorkflowStep = 'generate' | 'edit' | 'html' | 'deploy';
+export type WorkflowStep = 'generate' | 'edit' | 'link' | 'html' | 'deploy';
 
 // LP Generator 状態管理
 export interface LPGeneratorState {
@@ -167,6 +182,9 @@ export interface LPGeneratorState {
   // MVP新機能: デプロイ状態
   isDeploying: boolean;
   deployedUrl: string | null;
+
+  // クリッカブル領域（リンク設定）
+  clickableRegions: ClickableRegion[];
 
   // ワークフロー
   currentStep: WorkflowStep;
@@ -200,6 +218,15 @@ export interface LPGeneratorState {
   updateEditItem: (id: string, updates: Partial<EditItem>) => void;
   clearEditItems: () => void;
   applyAllEdits: () => Promise<void>;
+
+  // クリッカブル領域管理
+  addClickableRegion: (region: EditRegion, type: ClickableType, url: string, label: string, openInNewTab?: boolean) => void;
+  updateClickableRegion: (id: string, updates: Partial<Omit<ClickableRegion, 'id'>>) => void;
+  removeClickableRegion: (id: string) => void;
+  clearClickableRegions: () => void;
+
+  // デプロイ用HTML生成（画像+クリッカブル領域）
+  generateDeployableHTML: () => string;
 }
 
 // 最大枚数制限

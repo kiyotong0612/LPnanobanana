@@ -9,6 +9,8 @@ import type {
   EditRegion,
   WorkflowStep,
   SectionConfig,
+  ClickableRegion,
+  ClickableType,
 } from '@/types';
 import { MAX_MATERIAL_IMAGES, MAX_REFERENCE_IMAGES, MAX_SECTION_MATERIAL_IMAGES } from '@/types';
 import { combineImages } from '@/services/imageCombiner';
@@ -49,6 +51,9 @@ export const useLPStore = create<LPGeneratorState>((set, get) => ({
   // MVP新機能: デプロイ状態
   isDeploying: false,
   deployedUrl: null,
+
+  // クリッカブル領域
+  clickableRegions: [],
 
   // ワークフロー
   currentStep: 'generate',
@@ -212,6 +217,7 @@ export const useLPStore = create<LPGeneratorState>((set, get) => ({
       generatedCSS: null,
       isDeploying: false,
       deployedUrl: null,
+      clickableRegions: [],
       currentStep: 'generate',
     }),
 
@@ -558,5 +564,113 @@ export const useLPStore = create<LPGeneratorState>((set, get) => ({
     }
 
     set({ currentEditIndex: -1 });
+  },
+
+  // クリッカブル領域管理
+  addClickableRegion: (region: EditRegion, type: ClickableType, url: string, label: string, openInNewTab = false) => {
+    const newRegion: ClickableRegion = {
+      id: Date.now().toString(),
+      region,
+      type,
+      url,
+      label,
+      openInNewTab,
+    };
+    set((state) => ({
+      clickableRegions: [...state.clickableRegions, newRegion],
+    }));
+  },
+
+  updateClickableRegion: (id: string, updates: Partial<Omit<ClickableRegion, 'id'>>) => {
+    set((state) => ({
+      clickableRegions: state.clickableRegions.map((region) =>
+        region.id === id ? { ...region, ...updates } : region
+      ),
+    }));
+  },
+
+  removeClickableRegion: (id: string) => {
+    set((state) => ({
+      clickableRegions: state.clickableRegions.filter((region) => region.id !== id),
+    }));
+  },
+
+  clearClickableRegions: () => {
+    set({ clickableRegions: [] });
+  },
+
+  // デプロイ用HTML生成（画像+クリッカブル領域）
+  generateDeployableHTML: () => {
+    const { combinedImage, clickableRegions } = get();
+
+    if (!combinedImage) {
+      return '';
+    }
+
+    // 画像をBase64 data URLに変換
+    const imageDataUrl = `data:${combinedImage.mimeType};base64,${combinedImage.base64}`;
+
+    // クリッカブル領域のHTML生成
+    const clickableAreasHTML = clickableRegions
+      .map((region) => {
+        const style = [
+          'position: absolute',
+          `top: ${region.region.y * 100}%`,
+          `left: ${region.region.x * 100}%`,
+          `width: ${region.region.width * 100}%`,
+          `height: ${region.region.height * 100}%`,
+          'cursor: pointer',
+          'display: block',
+        ].join('; ');
+
+        const target = region.openInNewTab ? ' target="_blank" rel="noopener noreferrer"' : '';
+
+        return `    <a href="${region.url}" aria-label="${region.label}" style="${style}"${target}></a>`;
+      })
+      .join('\n');
+
+    // 完全なHTMLを生成
+    const html = `<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Landing Page</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      min-height: 100vh;
+      background-color: #f5f5f5;
+    }
+    .lp-container {
+      position: relative;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .lp-image {
+      width: 100%;
+      display: block;
+    }
+    .lp-container a {
+      transition: background-color 0.2s;
+    }
+    .lp-container a:hover {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+  </style>
+</head>
+<body>
+  <div class="lp-container">
+    <img src="${imageDataUrl}" alt="Landing Page" class="lp-image">
+${clickableAreasHTML}
+  </div>
+</body>
+</html>`;
+
+    return html;
   },
 }));

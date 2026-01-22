@@ -3,11 +3,9 @@
 import { useState, useMemo } from 'react';
 import {
   Wand2,
-  Code,
   Rocket,
   Undo2,
   Loader2,
-  Copy,
   Check,
   ExternalLink,
   AlertCircle,
@@ -17,6 +15,8 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  Link2,
+  Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -24,6 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { ImageMarker } from '@/components/ImageMarker';
+import { LinkConfigPanel } from '@/components/LinkConfigPanel';
 import { useLPStore } from '@/store/lpStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { cn } from '@/lib/utils';
@@ -31,7 +32,7 @@ import type { WorkflowStep, EditRegion, EditItem } from '@/types';
 
 const steps: { id: WorkflowStep; label: string; icon: React.ReactNode }[] = [
   { id: 'edit', label: '編集', icon: <Wand2 className="w-4 h-4" /> },
-  { id: 'html', label: 'HTML変換', icon: <Code className="w-4 h-4" /> },
+  { id: 'link', label: 'リンク設定', icon: <Link2 className="w-4 h-4" /> },
   { id: 'deploy', label: 'デプロイ', icon: <Rocket className="w-4 h-4" /> },
 ];
 
@@ -67,13 +68,13 @@ export function WorkflowPanel() {
     updateEditItem,
     clearEditItems,
     applyAllEdits,
-    isConverting,
     generatedHTML,
-    convertToHTML,
     isDeploying,
     deployedUrl,
     deploy,
     error,
+    clickableRegions,
+    generateDeployableHTML,
   } = useLPStore();
 
   const { geminiApiKey, vercelToken } = useSettingsStore();
@@ -82,10 +83,7 @@ export function WorkflowPanel() {
   const [newInstruction, setNewInstruction] = useState('');
   const [selectedRegion, setSelectedRegion] = useState<EditRegion | null>(null);
   const [selectedEditItemId, setSelectedEditItemId] = useState<string | null>(null);
-  const [framework, setFramework] = useState<'html' | 'react' | 'nextjs'>('html');
-  const [cssFramework, setCssFramework] = useState<'tailwind' | 'css'>('tailwind');
   const [projectName, setProjectName] = useState('my-landing-page');
-  const [copied, setCopied] = useState(false);
 
   // 編集項目用の領域データ
   const markerRegions = useMemo(() => {
@@ -148,20 +146,34 @@ export function WorkflowPanel() {
     setSelectedEditItemId(null);
   };
 
-  const handleConvert = async () => {
-    await convertToHTML(framework, cssFramework);
-  };
-
   const handleDeploy = async () => {
     if (!projectName.trim()) return;
     await deploy(projectName);
   };
 
-  const handleCopyHTML = () => {
-    if (!generatedHTML) return;
-    navigator.clipboard.writeText(generatedHTML);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  // 画像ベースのHTMLでデプロイ
+  const handleDeployWithImage = async () => {
+    if (!projectName.trim()) return;
+    const html = generateDeployableHTML();
+    if (!html) return;
+
+    // deploy関数に直接HTMLを渡せないので、一時的にgeneratedHTMLを設定
+    useLPStore.setState({ generatedHTML: html, generatedCSS: '' });
+    await deploy(projectName);
+  };
+
+  // HTMLをダウンロード
+  const handleDownloadHTML = () => {
+    const html = generateDeployableHTML();
+    if (!html) return;
+
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${projectName || 'landing-page'}.html`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const pendingCount = editItems.filter((item) => item.status === 'pending').length;
@@ -379,106 +391,27 @@ export function WorkflowPanel() {
         </div>
       )}
 
-      {/* HTML Convert Step */}
-      {currentStep === 'html' && (
+      {/* Link Configuration Step */}
+      {currentStep === 'link' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>フレームワーク</Label>
-              <div className="flex flex-col gap-1">
-                {(['html', 'react', 'nextjs'] as const).map((fw) => (
-                  <Button
-                    key={fw}
-                    variant={framework === fw ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setFramework(fw)}
-                    className={cn(
-                      'justify-start',
-                      framework === fw &&
-                        'bg-[var(--banana)] text-[var(--banana-foreground)] hover:bg-[var(--banana)]/90'
-                    )}
-                  >
-                    {fw === 'html' ? 'HTML' : fw === 'react' ? 'React' : 'Next.js'}
-                  </Button>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>CSSフレームワーク</Label>
-              <div className="flex flex-col gap-1">
-                {(['tailwind', 'css'] as const).map((css) => (
-                  <Button
-                    key={css}
-                    variant={cssFramework === css ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setCssFramework(css)}
-                    className={cn(
-                      'justify-start',
-                      cssFramework === css &&
-                        'bg-[var(--banana)] text-[var(--banana-foreground)] hover:bg-[var(--banana)]/90'
-                    )}
-                  >
-                    {css === 'tailwind' ? 'Tailwind CSS' : '通常のCSS'}
-                  </Button>
-                ))}
-              </div>
-            </div>
+          <LinkConfigPanel
+            imageSrc={`data:${combinedImage.mimeType};base64,${combinedImage.base64}`}
+          />
+
+          <div className="flex gap-2">
+            <Button
+              onClick={() => setCurrentStep('deploy')}
+              className="flex-1 gap-2 bg-[var(--banana)] text-[var(--banana-foreground)] hover:bg-[var(--banana)]/90"
+            >
+              <Rocket className="w-4 h-4" />
+              デプロイへ進む
+            </Button>
           </div>
 
-          <Button
-            onClick={handleConvert}
-            disabled={isConverting}
-            className="w-full gap-2 bg-[var(--banana)] text-[var(--banana-foreground)] hover:bg-[var(--banana)]/90"
-          >
-            {isConverting ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                変換中...
-              </>
-            ) : (
-              <>
-                <Code className="w-4 h-4" />
-                HTMLに変換
-              </>
-            )}
-          </Button>
-
-          {generatedHTML && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label>生成されたコード</Label>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleCopyHTML}
-                  className="gap-1"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="w-3 h-3" />
-                      コピーしました
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3 h-3" />
-                      コピー
-                    </>
-                  )}
-                </Button>
-              </div>
-              <div className="relative">
-                <pre className="p-3 bg-muted rounded-lg text-xs overflow-auto max-h-[150px]">
-                  <code>{generatedHTML.slice(0, 800)}...</code>
-                </pre>
-              </div>
-              <Button
-                onClick={() => setCurrentStep('deploy')}
-                className="w-full gap-2 bg-[var(--banana)] text-[var(--banana-foreground)] hover:bg-[var(--banana)]/90"
-              >
-                <Rocket className="w-4 h-4" />
-                問題なければデプロイへ進む
-              </Button>
-            </div>
+          {clickableRegions.length > 0 && (
+            <p className="text-xs text-muted-foreground text-center">
+              {clickableRegions.length}個のリンクが設定されています
+            </p>
           )}
         </div>
       )}
@@ -486,73 +419,87 @@ export function WorkflowPanel() {
       {/* Deploy Step */}
       {currentStep === 'deploy' && (
         <div className="space-y-4">
-          {!generatedHTML ? (
-            <div className="text-center py-4 text-muted-foreground">
-              <p className="mb-2">まずHTMLに変換してください</p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentStep('html')}
-              >
-                HTML変換へ
-              </Button>
-            </div>
-          ) : (
-            <>
-              <div className="space-y-2">
-                <Label>プロジェクト名</Label>
-                <Input
-                  value={projectName}
-                  onChange={(e) => setProjectName(e.target.value)}
-                  placeholder="my-landing-page"
-                  disabled={isDeploying}
-                />
-                <p className="text-xs text-muted-foreground">
-                  英数字とハイフンのみ使用可能
-                </p>
+          {/* プレビュー情報 */}
+          <div className="p-3 bg-muted/30 rounded-lg space-y-2">
+            <div className="text-sm font-medium">デプロイ内容</div>
+            <div className="text-xs text-muted-foreground space-y-1">
+              <div className="flex items-center gap-2">
+                <Check className="w-3 h-3 text-green-500" />
+                LP画像（{combinedImage.width} x {combinedImage.height}px）
               </div>
-
-              <Button
-                onClick={handleDeploy}
-                disabled={!projectName.trim() || isDeploying || !vercelToken}
-                className="w-full gap-2 bg-[var(--banana)] text-[var(--banana-foreground)] hover:bg-[var(--banana)]/90"
-              >
-                {isDeploying ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    デプロイ中...
-                  </>
+              <div className="flex items-center gap-2">
+                {clickableRegions.length > 0 ? (
+                  <Check className="w-3 h-3 text-green-500" />
                 ) : (
-                  <>
-                    <Rocket className="w-4 h-4" />
-                    Vercelにデプロイ
-                  </>
+                  <AlertCircle className="w-3 h-3 text-muted-foreground" />
                 )}
-              </Button>
+                クリッカブル領域: {clickableRegions.length}個
+              </div>
+            </div>
+          </div>
 
-              {!vercelToken && (
-                <p className="text-xs text-destructive">
-                  Vercel Access Tokenを設定してください（右上の設定アイコン）
-                </p>
-              )}
+          <div className="space-y-2">
+            <Label>プロジェクト名</Label>
+            <Input
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              placeholder="my-landing-page"
+              disabled={isDeploying}
+            />
+            <p className="text-xs text-muted-foreground">
+              英数字とハイフンのみ使用可能
+            </p>
+          </div>
 
-              {deployedUrl && (
-                <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
-                  <p className="text-sm font-medium text-green-600 dark:text-green-400 mb-2">
-                    デプロイ完了!
-                  </p>
-                  <a
-                    href={deployedUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-sm text-primary hover:underline"
-                  >
-                    {deployedUrl}
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
+          <div className="flex gap-2">
+            <Button
+              onClick={handleDeployWithImage}
+              disabled={!projectName.trim() || isDeploying || !vercelToken}
+              className="flex-1 gap-2 bg-[var(--banana)] text-[var(--banana-foreground)] hover:bg-[var(--banana)]/90"
+            >
+              {isDeploying ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  デプロイ中...
+                </>
+              ) : (
+                <>
+                  <Rocket className="w-4 h-4" />
+                  Vercelにデプロイ
+                </>
               )}
-            </>
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleDownloadHTML}
+              className="gap-2"
+            >
+              <Download className="w-4 h-4" />
+              HTML
+            </Button>
+          </div>
+
+          {!vercelToken && (
+            <p className="text-xs text-destructive">
+              Vercel Access Tokenを設定してください（右上の設定アイコン）
+            </p>
+          )}
+
+          {deployedUrl && (
+            <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
+              <p className="text-sm font-medium text-green-600 dark:text-green-400 mb-2">
+                デプロイ完了!
+              </p>
+              <a
+                href={deployedUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-sm text-primary hover:underline"
+              >
+                {deployedUrl}
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
           )}
         </div>
       )}
