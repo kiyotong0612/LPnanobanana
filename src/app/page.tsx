@@ -143,37 +143,39 @@ export default function Home() {
                   </p>
                 </div>
 
-                {/* Section Configs - セクションが2枚以上の場合のみ表示 */}
-                {numberOfSections >= 2 && (
-                  <div className="space-y-2">
-                    <Label className="text-sm">セクションごとの設定</Label>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      各セクションに使用する素材画像や具体的な指示を設定できます
-                    </p>
-                    <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
-                      {sectionConfigs.map((config) => (
-                        <SectionConfigForm
-                          key={config.id}
-                          sectionId={config.id}
-                          isGenerating={isGenerating}
-                        />
-                      ))}
-                    </div>
+                {/* Section Configs - 全てのLP枚数で表示 */}
+                <div className="space-y-2">
+                  <Label className="text-sm">
+                    {numberOfSections === 1 ? 'LP設定' : 'セクションごとの設定'}
+                  </Label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    {numberOfSections === 1
+                      ? '素材画像や具体的な指示を設定できます'
+                      : '各セクションに使用する素材画像や具体的な指示を設定できます'}
+                  </p>
+                  <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                    {sectionConfigs.map((config) => (
+                      <SectionConfigForm
+                        key={config.id}
+                        sectionId={config.id}
+                        isGenerating={isGenerating}
+                      />
+                    ))}
                   </div>
-                )}
+                </div>
 
-                {/* Material Images - 共通素材 */}
-                <ImageDropzone
-                  type="material"
-                  images={materialImages}
-                  maxImages={MAX_MATERIAL_IMAGES}
-                  onAdd={addMaterialImage}
-                  onRemove={removeMaterialImage}
-                  label="共通素材画像（任意）"
-                  hint={numberOfSections >= 2
-                    ? "セクション指定がない場合に使用（最大6枚）"
-                    : "商品写真やロゴなど（最大6枚）"}
-                />
+                {/* Material Images - 共通素材（2枚以上の場合のみ表示） */}
+                {numberOfSections >= 2 && (
+                  <ImageDropzone
+                    type="material"
+                    images={materialImages}
+                    maxImages={MAX_MATERIAL_IMAGES}
+                    onAdd={addMaterialImage}
+                    onRemove={removeMaterialImage}
+                    label="共通素材画像（任意）"
+                    hint="セクション指定がない場合に使用（最大6枚）"
+                  />
+                )}
 
                 {/* Reference Images */}
                 <ImageDropzone
